@@ -1,6 +1,6 @@
 import axios from "axios";
 
 export const axiosInstance = axios.create({
-  baseURL: `${import.meta.env.VITE_API_URL}/api`,
+  baseURL: "https://real-time-chatapp-1-vyz7.onrender.com",
   withCredentials: true,
 });
