@@ -1,3 +1,5 @@
+const REQUIRE_EMAIL_VERIFICATION = process.env.NODE_ENV === "production";
+
 import crypto from "crypto";
 import { generateToken } from "../lib/utils.js";
 import User from "../models/user.model.js";
@@ -10,13 +12,16 @@ const VERIFICATION_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 export const signup = async (req, res) => {
   const { fullname, email, password } = req.body;
+
   try {
     if (!fullname || !email || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters" });
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 6 characters" });
     }
 
     const existingUser = await User.findOne({ email });
@@ -24,11 +29,61 @@ export const signup = async (req, res) => {
       return res.status(400).json({ message: "Email already exists" });
     }
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
+    // 🔥 DEV MODE: skip email verification
+    if (!REQUIRE_EMAIL_VERIFICATION) {
+      const user = await User.create({
+        fullname,
+        email,
+        password: hashedPassword,
+        isVerified: true,
+      });
+
+      generateToken(user._id, res);
+
+      return res.status(201).json({
+        message: "Account created",
+        user: {
+          _id: user._id,
+          fullname: user.fullname,
+          email: user.email,
+          profilePic: user.profilePic,
+        },
+      });
+    }
+
+    // =============================
+    // PRODUCTION FLOW (email gated)
+    // =============================
+
+    // 🔐 Only send email to YOUR address (Resend test mode)
+    if (!CAN_SEND_EMAIL(email)) {
+      const user = await User.create({
+        fullname,
+        email,
+        password: hashedPassword,
+        isVerified: true,
+      });
+
+      generateToken(user._id, res);
+
+      return res.status(201).json({
+        message: "Account created (email auto-verified).",
+        user: {
+          _id: user._id,
+          fullname: user.fullname,
+          email: user.email,
+          profilePic: user.profilePic,
+        },
+      });
+    }
+
+    // 👇 ONLY runs for gaurav.sahuu.gdg@gmail.com
     const verificationToken = crypto.randomBytes(32).toString("hex");
-    const verificationTokenExpires = new Date(Date.now() + VERIFICATION_TOKEN_EXPIRY_MS);
+    const verificationTokenExpires = new Date(
+      Date.now() + VERIFICATION_TOKEN_EXPIRY_MS
+    );
 
     await PendingSignup.deleteMany({ email });
 
@@ -39,34 +94,32 @@ export const signup = async (req, res) => {
       verificationToken,
       verificationTokenExpires,
     });
+
     await pending.save();
 
-    const frontendUrl = (process.env.FRONTEND_URL || "").replace(/\/$/, "");
-    if (!frontendUrl) {
-      await PendingSignup.findByIdAndDelete(pending._id);
-      console.error("Signup: FRONTEND_URL is not set");
-      return res.status(500).json({ message: "Server misconfiguration. Please try again later." });
-    }
-
+    const frontendUrl = process.env.FRONTEND_URL?.replace(/\/$/, "");
     const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
-    const { error: emailError } = await sendVerificationEmail(email, verificationUrl);
 
-    if (emailError) {
+    const { error } = await sendVerificationEmail(
+      email,
+      verificationUrl
+    );
+
+    if (error) {
       await PendingSignup.findByIdAndDelete(pending._id);
-      console.error("Signup: verification email could not be sent to", email, emailError?.message || emailError);
       return res.status(503).json({
-        message: "We couldn't send the verification email. Please check your email address and try again.",
+        message: "Failed to send verification email.",
       });
     }
 
     res.status(201).json({
-      message: "Check your email to verify and complete your account. The link expires in 1 hour.",
+      message: "Check your email to verify your account.",
     });
   } catch (error) {
     console.log("Error in signup controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
-};
+}; // ✅ MISSING BRACE WAS HERE
 
 export const login = async (req, res) => {
   const { email, password } = req.body;
@@ -82,7 +135,7 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    if (user.isVerified === false) {
+    if (REQUIRE_EMAIL_VERIFICATION && !user.isVerified) {
       return res.status(403).json({
         message: "Please verify your email before logging in.",
       });
@@ -106,7 +159,9 @@ export const verifyEmail = async (req, res) => {
   const { token } = req.query;
   try {
     if (!token || typeof token !== "string") {
-      return res.status(400).json({ message: "Invalid or missing verification token." });
+      return res
+        .status(400)
+        .json({ message: "Invalid or missing verification token." });
     }
 
     const pending = await PendingSignup.findOne({
@@ -116,14 +171,17 @@ export const verifyEmail = async (req, res) => {
 
     if (!pending) {
       return res.status(400).json({
-        message: "Invalid or expired verification link. Please sign up again to get a new link.",
+        message:
+          "Invalid or expired verification link. Please sign up again to get a new link.",
       });
     }
 
     const existingUser = await User.findOne({ email: pending.email });
     if (existingUser) {
       await PendingSignup.findByIdAndDelete(pending._id);
-      return res.status(400).json({ message: "This email is already registered. Please log in." });
+      return res
+        .status(400)
+        .json({ message: "This email is already registered. Please log in." });
     }
 
     const newUser = new User({
