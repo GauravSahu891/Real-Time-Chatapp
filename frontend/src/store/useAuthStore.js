@@ -32,19 +32,17 @@ export const useAuthStore = create((set, get) => ({
     set({ isSigningUp: true });
     try {
       const res = await axiosInstance.post("/auth/signup", data);
-      const isUnverified = res.data.isVerified === false || (res.data.message && res.data.message.includes("verify"));
-      if (isUnverified) {
-        toast.success(res.data.message || "Please verify your email. We've sent a verification link.");
-        return;
-      }
-      set({ authUser: res.data });
-      toast.success("Account created successfully");
-      get().connectSocket();
+      toast.success(res.data.message || "Check your email to verify and complete signup.");
     } catch (error) {
       toast.error(error.response?.data?.message || "Signup failed");
     } finally {
       set({ isSigningUp: false });
     }
+  },
+
+  setUserFromVerification: (user) => {
+    set({ authUser: user });
+    get().connectSocket();
   },
 
   login: async (data) => {

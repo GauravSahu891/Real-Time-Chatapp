@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { axiosInstance } from "../lib/axios";
+import { useAuthStore } from "../store/useAuthStore";
 import { CheckCircle, XCircle, Loader2, MessageSquare } from "lucide-react";
+import toast from "react-hot-toast";
 
 const VerifyEmailPage = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const token = searchParams.get("token");
   const [status, setStatus] = useState("loading"); // "loading" | "success" | "error"
   const [message, setMessage] = useState("");
+  const setUserFromVerification = useAuthStore((s) => s.setUserFromVerification);
 
   useEffect(() => {
     if (!token) {
@@ -22,18 +26,24 @@ const VerifyEmailPage = () => {
           params: { token },
         });
         setStatus("success");
-        setMessage(res.data.message || "Email verified successfully. You can now log in.");
+        setMessage(res.data.message || "Email verified. Your account is ready.");
+
+        if (res.data.user) {
+          setUserFromVerification(res.data.user);
+          toast.success("Welcome! Your account is ready.");
+          navigate("/", { replace: true });
+        }
       } catch (err) {
         setStatus("error");
         setMessage(
           err.response?.data?.message ||
-            "Invalid or expired verification link. Please request a new one."
+            "Invalid or expired verification link. Please sign up again to get a new link."
         );
       }
     };
 
     verify();
-  }, [token]);
+  }, [token, setUserFromVerification, navigate]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-base-200">
@@ -55,8 +65,9 @@ const VerifyEmailPage = () => {
             <>
               <CheckCircle className="w-14 h-14 text-success" />
               <p className="text-base-content/80">{message}</p>
-              <Link to="/login" className="btn btn-primary mt-2">
-                Sign in
+              <p className="text-sm text-base-content/60">Redirecting you to the app...</p>
+              <Link to="/" className="btn btn-primary mt-2">
+                Go to homepage
               </Link>
             </>
           )}
