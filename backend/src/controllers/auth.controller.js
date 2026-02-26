@@ -56,6 +56,8 @@ export const signup = async (req, res) => {
     // =============================
     // PRODUCTION FLOW (email gated)
     // =============================
+    const CAN_SEND_EMAIL = (email) =>
+      email === "gaurav.sahuu.gdg@gmail.com";
 
     // 🔐 Only send email to YOUR address (Resend test mode)
     if (!CAN_SEND_EMAIL(email)) {
@@ -119,7 +121,7 @@ export const signup = async (req, res) => {
     console.log("Error in signup controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
-}; // ✅ MISSING BRACE WAS HERE
+};
 
 export const login = async (req, res) => {
   const { email, password } = req.body;
