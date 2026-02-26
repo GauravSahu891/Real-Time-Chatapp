@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import http from "http";
 import express from "express";
+import User from "../models/user.model.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -20,6 +21,23 @@ export function getReceiverSocketId(userId) {
 
 // used to store online users
 const userSocketMap = {}; // {userId: socketId}
+
+io.use(async (socket, next) => {
+  const userId = socket.handshake.query.userId;
+  if (!userId) return next();
+
+  try {
+    const user = await User.findById(userId).select("isVerified");
+    if (!user || user.isVerified === false) {
+      socket.disconnect(true);
+      return;
+    }
+  } catch (err) {
+    socket.disconnect(true);
+    return;
+  }
+  next();
+});
 
 io.on("connection", (socket) => {
   console.log("A user connected", socket.id);

@@ -1,7 +1,11 @@
+import crypto from "crypto";
 import { generateToken } from "../lib/utils.js";
 import User from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import cloudinary from "../lib/cloudinary.js";
+import { sendVerificationEmail } from "../lib/resend.js";
+
+const VERIFICATION_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 export const signup = async (req, res) => {
   const { fullname, email, password } = req.body;
@@ -21,26 +25,41 @@ export const signup = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+    const verificationTokenExpires = new Date(Date.now() + VERIFICATION_TOKEN_EXPIRY_MS);
+
     const newUser = new User({
       fullname,
       email,
       password: hashedPassword,
+      isVerified: false,
+      verificationToken,
+      verificationTokenExpires,
     });
 
-    if (newUser) {
-      // generate jwt token here
-      generateToken(newUser._id, res);
-      await newUser.save();
-
-      res.status(201).json({
-        _id: newUser._id,
-        fullname: newUser.fullname,
-        email: newUser.email,
-        profilePic: newUser.profilePic,
-      });
-    } else {
-      res.status(400).json({ message: "Invalid user data" });
+    if (!newUser) {
+      return res.status(400).json({ message: "Invalid user data" });
     }
+
+    await newUser.save();
+
+    const frontendUrl = (process.env.FRONTEND_URL || "").replace(/\/$/, "");
+    const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
+
+    const { error } = await sendVerificationEmail(email, verificationUrl);
+    if (error) {
+      console.log("Error sending verification email:", error.message);
+      // User is created; they can request a new link later if we add that feature
+    }
+
+    res.status(201).json({
+      message: "Please verify your email. We've sent a verification link to your email.",
+      _id: newUser._id,
+      fullname: newUser.fullname,
+      email: newUser.email,
+      profilePic: newUser.profilePic,
+      isVerified: false,
+    });
   } catch (error) {
     console.log("Error in signup controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
@@ -61,6 +80,12 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
+    if (user.isVerified === false) {
+      return res.status(403).json({
+        message: "Please verify your email before logging in.",
+      });
+    }
+
     generateToken(user._id, res);
 
     res.status(200).json({
@@ -71,6 +96,38 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     console.log("Error in login controller", error.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const verifyEmail = async (req, res) => {
+  const { token } = req.query;
+  try {
+    if (!token || typeof token !== "string") {
+      return res.status(400).json({ message: "Invalid or missing verification token." });
+    }
+
+    const user = await User.findOne({
+      verificationToken: token,
+      verificationTokenExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        message: "Invalid or expired verification token. Please request a new verification link.",
+      });
+    }
+
+    user.isVerified = true;
+    user.verificationToken = undefined;
+    user.verificationTokenExpires = undefined;
+    await user.save();
+
+    res.status(200).json({
+      message: "Email verified successfully. You can now log in.",
+    });
+  } catch (error) {
+    console.log("Error in verifyEmail controller", error.message);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };

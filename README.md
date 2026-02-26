@@ -39,6 +39,8 @@ A full-stack real-time chat application built with the MERN stack (MongoDB, Expr
 
 ### Setup .env file
 
+Create a `.env` file in the `backend` folder (see `backend/.env.example`). Example:
+
 ```js
 MONGODB_URI=...
 PORT=5001
@@ -49,6 +51,10 @@ CLOUDINARY_API_KEY=...
 CLOUDINARY_API_SECRET=...
 
 NODE_ENV=development
+
+# Email verification (Resend)
+RESEND_API_KEY=your_resend_api_key
+FRONTEND_URL=https://real-time-chatapp-1-vyz7.onrender.com
 ```
 
 ### Build the app
