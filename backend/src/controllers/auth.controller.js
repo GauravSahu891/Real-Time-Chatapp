@@ -46,14 +46,17 @@ export const signup = async (req, res) => {
     const frontendUrl = (process.env.FRONTEND_URL || "").replace(/\/$/, "");
     const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`;
 
-    const { error } = await sendVerificationEmail(email, verificationUrl);
-    if (error) {
-      console.log("Error sending verification email:", error.message);
-      // User is created; they can request a new link later if we add that feature
+    const { error: emailError } = await sendVerificationEmail(email, verificationUrl);
+    const emailSent = !emailError;
+
+    if (emailError) {
+      console.error("Signup: verification email could not be sent to", email, emailError?.message || emailError);
     }
 
     res.status(201).json({
-      message: "Please verify your email. We've sent a verification link to your email.",
+      message: emailSent
+        ? "Please verify your email. We've sent a verification link to your email."
+        : "Account created. We couldn't send the verification email right now—please check your spam folder or try again later.",
       _id: newUser._id,
       fullname: newUser.fullname,
       email: newUser.email,

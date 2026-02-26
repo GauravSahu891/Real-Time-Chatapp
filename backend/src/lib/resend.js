@@ -5,8 +5,15 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const APP_NAME = "Real-Time Chat App";
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
 
+const MAX_SEND_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 1500;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * Send verification email with link
+ * Send verification email with link (with retries for reliability)
  * @param {string} to - Recipient email
  * @param {string} verificationUrl - Full URL for verification (FRONTEND_URL/verify-email?token=TOKEN)
  * @returns {Promise<{ data?: object, error?: object }>}
@@ -17,14 +24,36 @@ export async function sendVerificationEmail(to, verificationUrl) {
     return { data: null, error: { message: "Email not configured" } };
   }
 
-  const { data, error } = await resend.emails.send({
+  const payload = {
     from: FROM_EMAIL,
     to: [to],
     subject: `Verify your email - ${APP_NAME}`,
     html: getVerificationEmailHtml(verificationUrl),
-  });
+  };
 
-  return { data, error };
+  let lastError = null;
+  for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+    try {
+      const { data, error } = await resend.emails.send(payload);
+      if (!error) {
+        if (attempt > 1) {
+          console.log(`Verification email sent on attempt ${attempt} to ${to}`);
+        }
+        return { data, error: null };
+      }
+      lastError = error;
+      console.warn(`Resend attempt ${attempt}/${MAX_SEND_ATTEMPTS} failed for ${to}:`, error?.message || error);
+    } catch (err) {
+      lastError = err;
+      console.warn(`Resend attempt ${attempt}/${MAX_SEND_ATTEMPTS} threw for ${to}:`, err.message);
+    }
+    if (attempt < MAX_SEND_ATTEMPTS) {
+      await sleep(RETRY_DELAY_MS);
+    }
+  }
+
+  console.error("Verification email failed after all retries for", to, lastError?.message || lastError);
+  return { data: null, error: lastError || { message: "Failed after retries" } };
 }
 
 function getVerificationEmailHtml(verificationUrl) {
