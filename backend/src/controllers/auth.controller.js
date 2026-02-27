@@ -31,7 +31,7 @@ export const signup = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 🔥 DEV MODE: skip email verification
+    //  DEV MODE: skip email verification
     if (!REQUIRE_EMAIL_VERIFICATION) {
       const user = await User.create({
         fullname,
