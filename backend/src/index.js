@@ -21,7 +21,7 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(cookieParser());
 app.use(
   cors({
-    origin: "https://real-time-chatapp-1-vyz7.onrender.com",
+    origin: process.env.FRONTEND_URL,
     credentials: true,
   })
 );
